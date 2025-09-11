@@ -1,12 +1,12 @@
 [
   {
     "Name": "PTUResourceGroupName",
-    "Value": "<your-resource-group-name>",
+    "Value": "ai-agent-demo",
     "Encrypted": false
   },
   {
     "Name": "PTUFoundryAccountName",
-    "Value": "<your-cognitive-account-name>",
+    "Value": "ai-agent-demo-foundry-eastus2",
     "Encrypted": false
   },
   {

@@ -1,0 +1,5 @@
+azure-identity
+azure-mgmt-automation
+azure-mgmt-authorization
+azure-mgmt-resource
+python-dotenv

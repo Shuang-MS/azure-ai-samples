@@ -7,39 +7,63 @@
 # - No handling for existing resources (will overwrite or fail if conflicts occur).
 # - Rename .env.example to .env and fill in values before running.
 # - Run the script from any directory; paths will be resolved relative to this script's location.
+# - $env:SUBSCRIPTION_ID is set.
 
 # Get the script's directory for relative path resolution
 $scriptDir = $PSScriptRoot
+Import-Module dotenv -Force -Verbose
+Set-DotEnv -Path (Join-Path -Path $scriptDir -ChildPath ".env")
 
-# Load .env using poshdotenv (assumes .env is in the same directory as this script)
-Import-Module dotenv
-Set-DotEnv -Path (Join-Path -Path $scriptDir -ChildPath ".env")  # Explicitly load .env from script dir
-
-# Retrieve environment variables
 $rg = $env:ResourceGroupName
 $loc = $env:Location
 $aa = $env:AutomationAccountName
+$subscriptionId = $env:SUBSCRIPTION_ID
+
+# Resolve JSON paths early
+$varsRelativePath = $env:AutomationVariablesJson
+$varsPath = Join-Path -Path $scriptDir -ChildPath $varsRelativePath
+if (Test-Path $varsPath) {
+    $vars = Get-Content $varsPath -Raw | ConvertFrom-Json
+} else {
+    Write-Error "Variables file not found: $varsPath (resolved from $varsRelativePath)"
+    exit
+}
+
+# Extract PTU values from variables.json
+$ptuRg = ($vars | Where-Object { $_.Name -eq 'PTUResourceGroupName' }).Value
+$ptuAccountName = ($vars | Where-Object { $_.Name -eq 'PTUFoundryAccountName' }).Value
 
 # 1. Check if Automation Account exists; create if not
 $account = Get-AzAutomationAccount -ResourceGroupName $rg -Name $aa -ErrorAction SilentlyContinue
 if (-not $account) {
     Write-Output "Creating Automation Account: $aa"
     New-AzAutomationAccount -ResourceGroupName $rg -Name $aa -Location $loc
-} else {
-    Write-Output "Automation Account $aa already exists."
+    $account = Get-AzAutomationAccount -ResourceGroupName $rg -Name $aa
 }
 
-# 2. Create Automation Variables from JSON file path in env var
-$varsRelativePath = $env:AutomationVariablesJson
-$varsPath = Join-Path -Path $scriptDir -ChildPath $varsRelativePath
-if (Test-Path $varsPath) {
-    $vars = Get-Content $varsPath -Raw | ConvertFrom-Json
-    foreach ($v in $vars) {
-        Write-Output "Creating variable: $($v.Name)"
-        New-AzAutomationVariable -AutomationAccountName $aa -ResourceGroupName $rg -Name $v.Name -Value $v.Value -Encrypted $v.Encrypted
-    }
+# Enable system-assigned managed identity if not already enabled
+if (-not $account.Identity -or $account.Identity.Type -ne 'SystemAssigned') {
+    Write-Output "Enabling system-assigned managed identity for Automation Account: $aa"
+    Set-AzAutomationAccount -ResourceGroupName $rg -Name $aa -AssignSystemIdentity $true
+    $account = Get-AzAutomationAccount -ResourceGroupName $rg -Name $aa
+}
+
+$principalId = $account.Identity.PrincipalId
+
+# Assign Contributor role to the managed identity on the PTU resource group
+$scope = "/subscriptions/$subscriptionId/resourceGroups/$ptuRg"
+$existingAssignment = Get-AzRoleAssignment -ObjectId $principalId -RoleDefinitionName "Cognitive Services OpenAI Contributor" -Scope $scope -ErrorAction SilentlyContinue
+if (-not $existingAssignment) {
+    Write-Output "Assigning Cognitive Services OpenAI Contributor role to managed identity on scope: $scope"
+    New-AzRoleAssignment -ObjectId $principalId -RoleDefinitionName "Cognitive Services OpenAI Contributor" -Scope $scope
 } else {
-    Write-Error "Variables file not found: $varsPath (resolved from $varsRelativePath)"
+    Write-Output "Cognitive Services OpenAI Contributor role already assigned to managed identity on scope: $scope"
+}
+
+# 2. Create Automation Variables from JSON file
+foreach ($v in $vars) {
+    Write-Output "Creating variable: $($v.Name)"
+    New-AzAutomationVariable -AutomationAccountName $aa -ResourceGroupName $rg -Name $v.Name -Value $v.Value -Encrypted $v.Encrypted
 }
 
 # 3. Create and import the two PowerShell 7.2 runbooks

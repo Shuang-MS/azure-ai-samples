@@ -70,18 +70,8 @@ $cliOutput = & az cognitiveservices account deployment delete `
 
 # Check exit code
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "$errorMessage.Code: $errorMessage.Message"
-    Send-Alert -Message "Failed to delete deployment '$DeploymentName'. Error: $errorMessage.Message"
+    $errorMessage = $cliOutput | Out-String
+    Send-Alert -Message "Failed to delete deployment '$DeploymentName'. Error: $errorMessage"
 } else {
     Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC'): Global Provisioned deployment '$DeploymentName' deleted successfully."
-    Send-Alert -Message "Global Provisioned deployment '$DeploymentName' deleted successfully from resource '$AccountName'."
-}
-
-# Check exit code
-if ($LASTEXITCODE -ne 0) {
-    $errorMessage = $cliOutput | Out-String
-    Write-Error "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') CLI Error Output: $errorMessage"
-    Send-Alert -Message "Failed to create deployment '$DeploymentName'. Error: $errorMessage"
-} else {
-    Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC'): Global Provisioned deployment '$DeploymentName' created successfully with $PTUCapacity PTUs."
 }

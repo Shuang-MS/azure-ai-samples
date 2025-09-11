@@ -15,29 +15,27 @@ Automatically create and delete Azure OpenAI (AOAI) Provisioned Throughput Unit 
 2. **PowerShell 7+**: Verify with `pwsh --version`.
 3. **Az PowerShell Modules**: Install the required modules (includes Automation and Resources):
    ```powershell
-   Install-Module -Name Az -Scope CurrentUser -Repository PSGallery -AllowClobber
+   Install-Module -Name Az -Repository PSGallery -Force -Scope CurrentUser
    ```
    For environment variable loading, install the `dotenv` module (recommended for simplicity):
    ```powershell
-   Install-Module -Name dotenv -Scope CurrentUser
+   Install-Module -Name dotenv -Scope CurrentUser -Force
    ```
 4. **Azure Login**:
    ```powershell
    Connect-AzAccount
    ```
-   Or via Azure CLI:
-   ```bash
-   az login
-   ```
+
    Set your subscription ID:
    ```powershell
-   $env:SUBSCRIPTION_ID = (az account show --query id -o tsv)
+   $env:SUBSCRIPTION_ID = (Get-AzContext).Subscription.Id
    ```
 
 **Note**: Ensure the Automation Account's managed identity has Contributor role on the target Resource Group for AOAI operations. Assign it via the Azure portal or PowerShell:
 ```powershell
 $identity = Get-AzAutomationAccount -ResourceGroupName $env:ResourceGroupName -Name $env:AutomationAccountName | Select-Object -ExpandProperty Identity
-New-AzRoleAssignment -ObjectId $identity.PrincipalId -RoleDefinitionName "Contributor" -Scope "/subscriptions/$env:SUBSCRIPTION_ID/resourceGroups/$env:ResourceGroupName"
+
+New-AzRoleAssignment -ObjectId $identity.PrincipalId -RoleDefinitionName "Cognitive Services OpenAI Contributor" -Scope "/subscriptions/$env:SUBSCRIPTION_ID/resourceGroups/$env:ResourceGroupName"
 ```
 
 ## Setup Environment Variables
