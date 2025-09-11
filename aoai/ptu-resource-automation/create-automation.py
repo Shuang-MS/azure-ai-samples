@@ -1,38 +1,34 @@
 import os
 import json
+import time
 import uuid
-from datetime import datetime
+import sys
 from dotenv import load_dotenv
-from azure.identity import DefaultAzureCredential
+from azure.identity import AzureCliCredential
 from azure.mgmt.automation import AutomationClient
 from azure.mgmt.authorization import AuthorizationManagementClient
 from azure.mgmt.resource import ResourceManagementClient
-from azure.core.exceptions import ResourceNotFoundError, HttpResponseError
+from azure.core.exceptions import ResourceNotFoundError
 
-# Load .env located next to this script
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(SCRIPT_DIR, ".env"))
+load_dotenv()  # Load environment variables from .env file if present
 
-# Required env vars (same names as PowerShell script assumed)
-RG = os.environ["RESOURCE_GROUP_NAME"]
+RG = os.environ["AUTOMATION_RESOURCE_GROUP_NAME"]
 LOC = os.environ["LOCATION"]
 AA = os.environ["AUTOMATION_ACCOUNT_NAME"]
 SUBSCRIPTION_ID = os.environ["SUBSCRIPTION_ID"]
 
 VARS_JSON_REL = os.environ["AUTOMATION_VARIABLES_JSON"]
-SCHEDULES_JSON_REL = os.environ.get("SCHEDULES_JSON")
+SCHEDULES_JSON_REL = os.environ.get("AUTOMATION_SCHEDULES_JSON") 
 CREATE_RUNBOOK_PATH_REL = os.environ["CREATE_RUNBOOK_PATH"]
 DELETE_RUNBOOK_PATH_REL = os.environ["DELETE_RUNBOOK_PATH"]
 CREATE_RUNBOOK_NAME = os.environ["CREATE_RUNBOOK_NAME"]
 DELETE_RUNBOOK_NAME = os.environ["DELETE_RUNBOOK_NAME"]
 
-# Paths
-vars_path = os.path.join(SCRIPT_DIR, VARS_JSON_REL)
-schedules_path = os.path.join(SCRIPT_DIR, SCHEDULES_JSON_REL) if SCHEDULES_JSON_REL else None
-create_runbook_path = os.path.join(SCRIPT_DIR, CREATE_RUNBOOK_PATH_REL)
-delete_runbook_path = os.path.join(SCRIPT_DIR, DELETE_RUNBOOK_PATH_REL)
+vars_path = os.path.abspath(VARS_JSON_REL)
+schedules_path = SCHEDULES_JSON_REL
+create_runbook_path = CREATE_RUNBOOK_PATH_REL
+delete_runbook_path = DELETE_RUNBOOK_PATH_REL
 
-# Load JSON data
 with open(vars_path, "r", encoding="utf-8") as f:
     vars_data = json.load(f)
 
@@ -43,42 +39,18 @@ if schedules_path and os.path.exists(schedules_path):
 else:
     print(f"Schedules file not found or not specified: {schedules_path}")
 
-# Extract PTU values
-ptu_rg = next(v["Value"] for v in vars_data if v["Name"] == "PTUResourceGroupName")
-ptu_account_name = next(v["Value"] for v in vars_data if v["Name"] == "PTUFoundryAccountName")  # retained for parity (not directly used)
+ptu_rg = vars_data["PTUResourceGroupName"]["value"]
+ptu_account_name = vars_data["PTUFoundryAccountName"]["value"]
+assert ptu_rg, "PTUResourceGroupName variable is required."
+assert ptu_account_name, "PTUFoundryAccountName variable is required."
 
-credential = DefaultAzureCredential(exclude_interactive_browser_credential=False)
+ptu_account_resource_id = f"/subscriptions/{SUBSCRIPTION_ID}/resourceGroups/{ptu_rg}/providers/Microsoft.CognitiveServices/accounts/{ptu_account_name}"
+ptu_account_required_role = "Cognitive Services OpenAI Contributor"
+
+credential = AzureCliCredential()
 automation_client = AutomationClient(credential, SUBSCRIPTION_ID)
 auth_client = AuthorizationManagementClient(credential, SUBSCRIPTION_ID)
 resource_client = ResourceManagementClient(credential, SUBSCRIPTION_ID)
-
-def ensure_automation_account():
-    print(f"Ensuring Automation Account '{AA}' in resource group '{RG}'")
-    try:
-        acct = automation_client.automation_account.get(RG, AA)
-    except ResourceNotFoundError:
-        print("Creating Automation Account...")
-        acct = automation_client.automation_account.create_or_update(
-            RG,
-            AA,
-            {
-                "location": LOC,
-                "identity": {"type": "SystemAssigned"},
-                "sku": {"name": "Basic"},
-            },
-        )
-    # Ensure system-assigned identity
-    if not getattr(acct, "identity", None) or acct.identity.type != "SystemAssigned":
-        print("Enabling system-assigned managed identity...")
-        acct = automation_client.automation_account.update(
-            RG,
-            AA,
-            {
-                "location": LOC,
-                "identity": {"type": "SystemAssigned"},
-            },
-        )
-    return acct
 
 def find_role_definition_id(scope: str, role_name: str) -> str:
     for rd in auth_client.role_definitions.list(scope, filter=f"roleName eq '{role_name}'"):
@@ -87,7 +59,7 @@ def find_role_definition_id(scope: str, role_name: str) -> str:
 
 def ensure_role_assignment(principal_id: str, scope: str, role_name: str):
     role_def_id = find_role_definition_id(scope, role_name)
-    # Check existing
+
     existing = [
         ra for ra in auth_client.role_assignments.list_for_scope(scope)
         if ra.principal_id == principal_id and ra.role_definition_id.lower() == role_def_id.lower()
@@ -97,6 +69,7 @@ def ensure_role_assignment(principal_id: str, scope: str, role_name: str):
         return
     assignment_name = str(uuid.uuid4())
     print(f"Assigning role '{role_name}' on {scope}")
+
     auth_client.role_assignments.create(
         scope,
         assignment_name,
@@ -106,13 +79,52 @@ def ensure_role_assignment(principal_id: str, scope: str, role_name: str):
         },
     )
 
+def ensure_automation_account():
+    print(f"Ensuring Automation Account '{AA}' in resource group '{RG}'")
+
+    try:
+        acct = automation_client.automation_account.get(RG, AA)
+        print("Using existing Automation Account. Please ensure it has a managed identity assigned, with role 'Cognitive Services OpenAI Contributor' or equivalent permissions assigned on the PTU resource.")
+
+    except ResourceNotFoundError:
+        print("Creating Automation Account...")
+        acct = automation_client.automation_account.create_or_update(
+            RG,
+            AA,
+            {
+                "location": LOC,
+                "sku": {"name": "Basic"},
+            },
+        )
+        
+        poller = resource_client.resources.begin_update_by_id(
+            acct.id,
+            "2024-10-23",
+            {
+                "identity": {
+                    "type": "SystemAssigned"
+                }
+            }
+        )
+        result = poller.result()
+        time.sleep(30)
+        managed_identity = result.identity
+        principal_id = managed_identity.principal_id
+        if not principal_id:
+            raise RuntimeError(f"Managed identity was not assigned properly to {acct.id}.")
+
+        ensure_role_assignment(principal_id, ptu_account_resource_id, ptu_account_required_role)
+        
+    return acct
+
 def create_variables():
     print("Creating Automation Variables...")
-    for v in vars_data:
-        name = v["Name"]
-        value = v["Value"]
-        encrypted = bool(v.get("Encrypted"))
+    for name, v in vars_data.items():
+        value = json.dumps(v["value"])
+        print(f"Value for {name}: {value}")
+        encrypted = bool(v.get("encrypted", False))
         print(f"  Variable: {name}")
+
         automation_client.variable.create_or_update(
             RG,
             AA,
@@ -125,6 +137,16 @@ def create_variables():
             },
         )
 
+def run_step(step_name: str, fn, *args, **kwargs):
+    print(f"==> {step_name}")
+    try:
+        result = fn(*args, **kwargs)
+        print(f"[OK] {step_name}")
+        return result
+    except Exception as e:
+        print(f"[FAIL] {step_name}: {e}")
+        raise
+
 def read_file_utf8(path: str) -> str:
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
@@ -135,6 +157,7 @@ def import_and_publish_runbook(runbook_name: str, file_path: str):
     # Create or get runbook
     try:
         rb = automation_client.runbook.get(RG, AA, runbook_name)
+        print(rb)
     except ResourceNotFoundError:
         rb = automation_client.runbook.create_or_update(
             RG,
@@ -149,36 +172,47 @@ def import_and_publish_runbook(runbook_name: str, file_path: str):
             },
         )
     # Replace draft content
-    automation_client.runbook_draft.replace_content(RG, AA, runbook_name, content)
+    automation_client.runbook_draft.begin_replace_content(RG, AA, runbook_name, content)
     # Publish
     print(f"Publishing runbook '{runbook_name}'")
     poller = automation_client.runbook.begin_publish(RG, AA, runbook_name)
     poller.result()
 
-def ensure_schedule_and_link(schedule_def: dict):
-    name = schedule_def["Name"]
+def ensure_schedule_and_link(name, schedule_def: dict):
     runbook_name = schedule_def["RunbookName"]
-    start_time = datetime.fromisoformat(schedule_def["StartTime"])
+    start_time = schedule_def["StartTime"]
     frequency = schedule_def["Frequency"]
     interval = schedule_def["Interval"]
+    time_zone = schedule_def.get("TimeZone", "UTC")
+    parameters = schedule_def.get("Parameters", {})
 
-    print(f"Creating schedule '{name}' for runbook '{runbook_name}'")
-    automation_client.schedule.create_or_update(
-        RG,
-        AA,
-        name,
-        {
-            "name": name,
-            "description": "",
-            "start_time": start_time,
-            "frequency": frequency,
-            "interval": interval,
-            "time_zone": "UTC",
-            "advanced_schedule": None,
-        },
-    )
-    # Link schedule via job schedule
+    print(f"Ensuring schedule '{name}' for runbook '{runbook_name}'")
+    try:
+        automation_client.schedule.get(RG, AA, name)
+        print(f"Schedule '{name}' already exists")
+    except ResourceNotFoundError:
+        automation_client.schedule.create_or_update(
+            RG,
+            AA,
+            name,
+            {
+                "name": name,
+                "description": "",
+                "start_time": start_time,
+                "frequency": frequency,
+                "interval": interval,
+                "time_zone": time_zone,
+                "advanced_schedule": None,
+            },
+        )
+
+    existing_links = [js for js in automation_client.job_schedule.list_by_automation_account(RG, AA) if js.schedule.name == name and js.runbook.name == runbook_name]
+    if existing_links:
+        print(f"Link for schedule '{name}' to runbook '{runbook_name}' already exists")
+        return
+    
     job_schedule_id = str(uuid.uuid4())
+    params_payload = { key: str(value) for key, value in parameters.items() } if parameters else {}
     print(f"Linking schedule '{name}' to runbook '{runbook_name}'")
     automation_client.job_schedule.create(
         RG,
@@ -187,30 +221,22 @@ def ensure_schedule_and_link(schedule_def: dict):
         {
             "schedule": {"name": name},
             "runbook": {"name": runbook_name},
+            "parameters": params_payload
         },
     )
 
-def list_resources():
-    print(f"Resources in resource group '{RG}':")
-    for res in resource_client.resources.list_by_resource_group(RG):
-        print(f"{res.name:40} {res.type:55} {res.location}")
-
 def main():
     try:
-        acct = ensure_automation_account()
-        principal_id = acct.identity.principal_id
-        scope = f"/subscriptions/{SUBSCRIPTION_ID}/resourceGroups/{ptu_rg}"
-        ensure_role_assignment(principal_id, scope, "Cognitive Services OpenAI Contributor")
-        create_variables()
-        import_and_publish_runbook(CREATE_RUNBOOK_NAME, create_runbook_path)
-        import_and_publish_runbook(DELETE_RUNBOOK_NAME, delete_runbook_path)
-        for s in schedules_data:
-            ensure_schedule_and_link(s)
-        list_resources()
+        run_step("Ensure Automation Account", ensure_automation_account)
+        run_step("Create Variables", create_variables)
+        run_step(f"Import & Publish Runbook {CREATE_RUNBOOK_NAME}", import_and_publish_runbook, CREATE_RUNBOOK_NAME, create_runbook_path)
+        run_step(f"Import & Publish Runbook {DELETE_RUNBOOK_NAME}", import_and_publish_runbook, DELETE_RUNBOOK_NAME, delete_runbook_path)
+        for name, s in schedules_data.items():
+            run_step(f"Ensure Schedule {name}", ensure_schedule_and_link, name, s)
         print("Done.")
-    except (HttpResponseError, Exception) as e:
-        print(f"Error: {e}")
-        raise
+    except Exception as e:
+        print("Aborting due to previous failure. ", {e})
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

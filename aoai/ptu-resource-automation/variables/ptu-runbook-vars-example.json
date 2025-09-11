@@ -1,0 +1,38 @@
+{
+  "PTUResourceGroupName": {
+    "Value": "",
+    "Encrypted": false
+  },
+  "PTUFoundryAccountName": {
+    "Value": "",
+    "Encrypted": false
+  },
+  "PTUModelName": {
+    "Value": "gpt-5",
+    "Encrypted": false
+  },
+  "PTUModelVersion": {
+    "Value": "2025-08-07",
+    "Encrypted": false
+  },
+  "PTUModelFormat": {
+    "Value": "OpenAI",
+    "Encrypted": false
+  },
+  "PTUDeploymentName": {
+    "Value": "gpt-5-ptu-peak",
+    "Encrypted": false
+  },
+  "PTUDefaultCapacity": {
+    "Value": 50,
+    "Encrypted": false
+  },
+  "PTUSKUName": {
+    "Value": "GlobalProvisionedManaged",
+    "Encrypted": false
+  },
+  "PTUWebhookUrl": {
+    "Value": "",
+    "Encrypted": true
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "CreatePTUDeploymentSchedule": {
+    "StartTime": "2025-09-13T17:55:00Z",
+    "TimeZone": "America/New_York",
+    "Frequency": "Day",
+    "Interval": 1,
+    "RunbookName": "CreatePTUDeployment",
+    "Parameters": {
+      "SKUName": "GlobalStandard",
+      "PTUCapacity": 1
+    }
+  },
+  "DeletePTUDeploymentSchedule": {
+    "StartTime": "2025-09-13T21:50:00Z",
+    "TimeZone": "America/New_York",
+    "Frequency": "Day",
+    "Interval": 1,
+    "RunbookName": "DeletePTUDeployment"
+  }
+}

@@ -1,103 +1,89 @@
-# Create & Delete Azure OpenAI PTU Deployments with Azure Automation
+# Create & Delete Azure OpenAI PTU Deployments (Python Automation)
 
-Automatically create and delete Azure OpenAI (AOAI) Provisioned Throughput Unit (PTU) model deployments (e.g., GPT series) on a schedule using Azure Automation runbooks. This setup helps optimize costs by provisioning resources only during peak hours.
+Automate scheduled creation and deletion of Azure OpenAI (AOAI) Provisioned Throughput Unit (PTU) deployments (e.g., GPT models) using Azure Automation. The Python bootstrap script provisions (idempotently) the Azure Automation Account, uploads runbooks, sets/update variables, and applies schedules so PTU capacity exists only during required hours (cost optimization).
 
 ## Components
-- **`create-automation.ps1`**: Idempotent script to bootstrap resources: Resource Group, Automation Account, Runbooks, Variables, and Schedules.
-- **`runbooks/CreatePTUDeployment.ps1`**: Provisions or updates PTU AOAI deployment resources.
-- **`runbooks/DeletePTUDeployment.ps1`**: Safely tears down PTU AOAI deployment resources.
-- **`variables/ptu-runbook-vars.json`**: JSON definitions for Automation Account variables (e.g., resource names, model details).
-- **`schedules/ptu-runbook-schedules.json`**: JSON definitions for schedules (e.g., daily create at 6 PM PDT, delete at 10 PM PDT).
+- `create-automation.py`: Idempotent bootstrap script (Automation Account, Runbooks, Variables, Schedules).
+- `runbooks/CreatePTUDeployment.ps1`: Runbook to create/update AOAI PTU deployment resources.
+- `runbooks/DeletePTUDeployment.ps1`: Runbook to tear down AOAI PTU deployment resources safely.
+- `variables/ptu-runbook-vars.json`: Key/value definitions consumed as Automation Variables.
+- `schedules/ptu-runbook-schedules.json`: Schedule definitions (e.g., create at 18:00 PDT, delete at 22:00 PDT).
+- `.env`: Local development environment variable file (not committed).
 
 ## Prerequisites
+1. Azure subscription + permissions to create:
+   - Resource Group
+   - Automation Account
+   - Role assignment (Cognitive Services OpenAI Contributor) to Automation Account managed identity
+2. Python 3.10+ (recommend 3.11+)
+3. Azure CLI (`az --version`)
+4. (Optional) PowerShell 7 if you want to run the existing PowerShell runbooks locally for testing
+5. Git
+6. Virtual environment tool (`python -m venv`)
 
-1. **Azure CLI**: Install and verify with `az --version`.
-2. **PowerShell 7+**: Verify with `pwsh --version`.
-3. **Az PowerShell Modules**: Install the required modules (includes Automation and Resources):
-   ```powershell
-   Install-Module -Name Az -Repository PSGallery -Force -Scope CurrentUser
-   ```
-   For environment variable loading, install the `dotenv` module (recommended for simplicity):
-   ```powershell
-   Install-Module -Name dotenv -Scope CurrentUser -Force
-   ```
-4. **Azure Login**:
-   ```powershell
-   Connect-AzAccount
-   ```
-
-   Set your subscription ID:
-   ```powershell
-   $env:SUBSCRIPTION_ID = (Get-AzContext).Subscription.Id
-   ```
-
-**Note**: Ensure the Automation Account's managed identity has Contributor role on the target Resource Group for AOAI operations. Assign it via the Azure portal or PowerShell:
-```powershell
-$identity = Get-AzAutomationAccount -ResourceGroupName $env:ResourceGroupName -Name $env:AutomationAccountName | Select-Object -ExpandProperty Identity
-
-New-AzRoleAssignment -ObjectId $identity.PrincipalId -RoleDefinitionName "Cognitive Services OpenAI Contributor" -Scope "/subscriptions/$env:SUBSCRIPTION_ID/resourceGroups/$env:ResourceGroupName"
+## Python Environment Setup
+```bash
+# From repo root
+python -m venv .venv
+source .venv/bin/activate  # Windows bash (Git Bash / WSL)
+pip install --upgrade pip
+pip install -r requirements.txt
 ```
 
-## Setup Environment Variables
+## Deployment
 
-Copy `.env.example` to `.env` and fill in your values (e.g., ResourceGroupName, Location).
+### Set Environment Variables
 
-To load the `.env` file (using the `dotenv` module for reliability):
-```powershell
-Import-Module dotenv
-Set-DotEnv  # Loads ./.env by default
+```bash
+cp .env.examples .env
+```
+- Required Environment Variables
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `AUTOMATION_RESOURCE_GROUP_NAME` | Resource group name to manage the Automation resources | ✅ |
+| `LOCATION` | Region of the Automation Resource | ✅ |
+| `AUTOMATION_ACCOUNT_NAME` | Automation account name | Will be created if not found |
+
+### Azure login
+
+Login as a user with Contributor role to the `AUTOMATION_RESOURCE_GROUP_NAME` 
+
+```bash
+az login
+```
+```bash
+export SUBSCRIPTION_ID=$(az account show --query id -o tsv)
 ```
 
-If you prefer not to use the module, use this custom loader:
-```powershell
-Get-Content .env | Where-Object { $_ -and ($_ -notmatch '^\s*#') } | ForEach-Object {
-    $k, $v = $_ -split '=', 2
-    [Environment]::SetEnvironmentVariable($k.Trim(), $v.Trim(), "Process")
-    $env:($k.Trim()) = $v.Trim()
-}
+### Set PTU Variables
+
+```bash
+cp variables/ptu-runbook-vars-example.json .ptu-runbook-vars.json
 ```
 
-**Example `.env`** (use consistent casing; paths are relative to the repo root):
-```
-ResourceGroupName=your-rg-name
-Location=eastus
-AutomationAccountName=your-automation-account
-AutomationVariablesJson=./variables/ptu-runbook-vars.json
-CreateRunbookName=CreatePTUDeployment
-CreateRunbookPath=./runbooks/CreatePTUDeployment.ps1
-DeleteRunbookName=DeletePTUDeployment
-DeleteRunbookPath=./runbooks/DeletePTUDeployment.ps1
-SchedulesJson=./schedules/ptu-runbook-schedules.json
-```
+- Variables required to customize
 
-## Create Automation Resources
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `PTUResourceGroupName` | Resource group name to manage the AI Foundry resource | ✅ |
+| `PTUFoundryAccountName` | AI Foundry account name to manage AOAI deployments | ✅ |
+| `PTUWebhookUrl` | Feishu Webhook url to send alert | Leave blank if do not need. |
 
-Run the bootstrap script from the repo root:
-```powershell
-pwsh -File ./create-automation.ps1
+### Set up Schedules
+
+```bash
+cp schedules/ptu-runbook-schedules-example.json .ptu-runbook-schedules.json
 ```
 
-This script is idempotent—it checks for existing resources before creating them.
+- Customize the StartTime & TimeZone, Frequency & Interval, Parameters for creation and deletion runbooks.
 
-## Running Runbooks Manually
+### Create Automation resources
 
-Start the create runbook:
-```powershell
-Start-AzAutomationRunbook -AutomationAccountName $env:AutomationAccountName -ResourceGroupName $env:ResourceGroupName -Name $env:CreateRunbookName
+```bash
+python create-automation.py
 ```
 
-Start the delete runbook:
-```powershell
-Start-AzAutomationRunbook -AutomationAccountName $env:AutomationAccountName -ResourceGroupName $env:ResourceGroupName -Name $env:DeleteRunbookName
-```
+## Next steps
 
-Monitor jobs:
-```powershell
-Get-AzAutomationJob -AutomationAccountName $env:AutomationAccountName -ResourceGroupName $env:ResourceGroupName | Select-Object JobId, RunbookName, Status, CreationTime | Format-Table
-```
-
-## Troubleshooting
-- **Path Issues**: Ensure paths in `.env` are relative to the script's execution directory (e.g., `./runbooks/...`). Use absolute paths if running from elsewhere.
-- **Permissions**: Verify the Automation Account's system-assigned identity has access to AOAI resources.
-- **Logs**: Check runbook output in the Azure portal under Automation Account > Jobs.
-- **Cleanup**: To delete resources, use `Remove-AzAutomationAccount` or the portal.
+- Dynamically calculate the SKU Capacity base on last 7-day tokens 
