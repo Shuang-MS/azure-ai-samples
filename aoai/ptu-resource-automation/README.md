@@ -14,7 +14,7 @@ Automate scheduled creation and deletion of Azure OpenAI (AOAI) Provisioned Thro
 1. Azure subscription + permissions to create:
    - Resource Group
    - Automation Account
-   - Role assignment (Cognitive Services OpenAI Contributor) to Automation Account managed identity
+   - Role assignment (Cognitive Services Contributor) to Automation Account managed identity
 2. Python 3.10+ (recommend 3.11+)
 3. Azure CLI (`az --version`)
 4. (Optional) PowerShell 7 if you want to run the existing PowerShell runbooks locally for testing
@@ -35,7 +35,7 @@ pip install -r requirements.txt
 ### Set Environment Variables
 
 ```bash
-cp .env.examples .env
+cp .env.example .env
 ```
 - Required Environment Variables
 
@@ -47,7 +47,7 @@ cp .env.examples .env
 
 ### Azure login
 
-Login as a user with Contributor role to the `AUTOMATION_RESOURCE_GROUP_NAME` 
+Login as a user with Contributor role to the `AUTOMATION_RESOURCE_GROUP_NAME`
 
 ```bash
 az login
@@ -59,21 +59,22 @@ export SUBSCRIPTION_ID=$(az account show --query id -o tsv)
 ### Set PTU Variables
 
 ```bash
-cp variables/ptu-runbook-vars-example.json .ptu-runbook-vars.json
+cp variables/ptu-runbook-vars-example-v2.json variables/.ptu-automation-vars.json
 ```
 
-- Variables required to customize
+- Variables to customize
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `PTUResourceGroupName` | Resource group name to manage the AI Foundry resource | ✅ |
-| `PTUFoundryAccountName` | AI Foundry account name to manage AOAI deployments | ✅ |
-| `PTUWebhookUrl` | Feishu Webhook url to send alert | Leave blank if do not need. |
+| Variable | Description |
+|----------|-------------|
+| `PTUCalculatedCapacity` | Calculated with past metrics |
+| `PTUBaselineCapacity` | Set as baseline |
+| `PTUWebhookUrl` | Feishu Webhook url to send alert |
 
 ### Set up Schedules
 
 ```bash
-cp schedules/ptu-runbook-schedules-example.json .ptu-runbook-schedules.json
+cp schedules/ptu-resources-example.json schedules/.ptu-resources-def.json
+cp schedules/ptu-runbook-schedules-example.json schedules/.ptu-runbook-schedules.json
 ```
 
 - Customize the StartTime & TimeZone, Frequency & Interval, Parameters for creation and deletion runbooks.
@@ -81,7 +82,7 @@ cp schedules/ptu-runbook-schedules-example.json .ptu-runbook-schedules.json
 ### Create Automation resources
 
 ```bash
-python create-automation.py
+python create-automation-v2.py
 ```
 
 ## Next steps

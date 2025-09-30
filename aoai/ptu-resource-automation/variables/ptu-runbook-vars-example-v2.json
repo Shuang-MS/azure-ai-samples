@@ -1,0 +1,14 @@
+{
+  "PTUCalculatedCapacity": {
+    "Value": 0,
+    "Encrypted": false
+  },
+  "PTUBaselineCapacity": {
+    "Value": 15,
+    "Encrypted": false
+  },
+  "PTUWebhookUrl": {
+    "Value": "",
+    "Encrypted": true
+  }
+}

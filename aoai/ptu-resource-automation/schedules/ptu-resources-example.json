@@ -1,0 +1,10 @@
+{
+    "SKUName": "DataZoneProvisionedManaged",
+    "ResourceGroupName": "<resource-group-name>",
+    "AccountName": "<ai-foundry-account-name>",
+    "ModelName": "gpt-5",
+    "ModelVersion": "2025-08-07",
+    "DeploymentName": "gpt-5-ptu",
+    "ModelFormat": "OpenAI",
+    "ManualPTUCapacity": 1
+}
