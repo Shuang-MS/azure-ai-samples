@@ -1,3 +1,4 @@
+from datetime import datetime, timezone, timedelta
 import os
 import json
 import time
@@ -180,12 +181,19 @@ def import_and_publish_runbook(runbook_name: str, file_path: str):
 
 def ensure_schedule_and_link(name, schedule_def: dict, params: dict):
     runbook_name = schedule_def["RunbookName"]
-    start_time = schedule_def["StartTime"]
     frequency = schedule_def["Frequency"]
-    interval = schedule_def["Interval"]
+    interval = schedule_def["Interval"] if "Interval" in schedule_def else None
     time_zone = schedule_def.get("TimeZone", "UTC")
     parameters = schedule_def.get("Parameters", {})
     parameters.update(params or {})
+
+    current_time = datetime.now(timezone.utc)
+    minimum_start_time = current_time + timedelta(minutes=6)
+    start_time = schedule_def["StartTime"]
+    parsed_start_time = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+    if parsed_start_time < minimum_start_time:
+        print(f"Warning: Specified start time {start_time} is in the past or too soon. Adjusting to {minimum_start_time.isoformat()}")
+        start_time = minimum_start_time.strftime('%Y-%m-%dT%H:%M:%SZ')
 
     print(f"Ensuring schedule '{name}' for runbook '{runbook_name}'")
     try:

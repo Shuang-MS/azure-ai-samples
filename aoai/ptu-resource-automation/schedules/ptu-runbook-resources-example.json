@@ -5,6 +5,5 @@
     "ModelName": "gpt-5",
     "ModelVersion": "2025-08-07",
     "DeploymentName": "gpt-5-ptu",
-    "ModelFormat": "OpenAI",
-    "ManualPTUCapacity": 15
+    "ModelFormat": "OpenAI"
 }

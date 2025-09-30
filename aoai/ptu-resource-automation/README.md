@@ -23,10 +23,12 @@ Automate scheduled creation and deletion of Azure OpenAI (AOAI) Provisioned Thro
 
 ## Python Environment Setup
 ```bash
-# From repo root
 python -m venv .venv
-source .venv/bin/activate  # Windows bash (Git Bash / WSL)
+source .venv/bin/activate
 pip install --upgrade pip
+```
+```bash
+cd aoai/ptu-resource-automation
 pip install -r requirements.txt
 ```
 
@@ -45,7 +47,34 @@ cp .env.example .env
 | `LOCATION` | Region of the Automation Resource | ✅ |
 | `AUTOMATION_ACCOUNT_NAME` | Automation account name | Will be created if not found |
 
-### Azure login
+### Set PTU Variables
+
+```bash
+cp variables/ptu-automation-vars-example.json variables/.ptu-automation-vars.json
+```
+
+- Variables to customize
+
+| Variable | Description | Required |
+|----------|-------------| ---------|
+| `PTUCalculatedCapacity` | Calculated with past metrics and will be updated with other Runbooks | can be 0 |
+| `PTUUpscaleCapacity` | As a sample for manually changing capacity | fallback to baseline |
+| `PTUDownscaleCapacity` | As a sample for manually changing capacity | fallback to baseline |
+| `PTUBaselineCapacity` | Set as baseline | 15 by default |
+| `PTUWebhookUrl` | Feishu Webhook url to send alert |
+
+### Set up Schedules
+
+```bash
+cp schedules/ptu-runbook-resources-example.json schedules/.ptu-runbook-resources.json
+cp schedules/ptu-runbook-schedules-example.json schedules/.ptu-runbook-schedules.json
+```
+- Add resource details as parameters for Schedule
+- Customize the StartTime (in UTC) & TimeZone (for display only), Frequency & Interval, Parameters for running runbooks.
+
+### Create Automation resources
+
+#### Azure login
 
 Login as a user with Contributor role to the `AUTOMATION_RESOURCE_GROUP_NAME`
 
@@ -56,30 +85,7 @@ az login
 export SUBSCRIPTION_ID=$(az account show --query id -o tsv)
 ```
 
-### Set PTU Variables
-
-```bash
-cp variables/ptu-automation-vars-example.json variables/.ptu-automation-vars.json
-```
-
-- Variables to customize
-
-| Variable | Description |
-|----------|-------------|
-| `PTUCalculatedCapacity` | Calculated with past metrics |
-| `PTUBaselineCapacity` | Set as baseline |
-| `PTUWebhookUrl` | Feishu Webhook url to send alert |
-
-### Set up Schedules
-
-```bash
-cp schedules/ptu-runbook-resources-example.json schedules/.ptu-runbook-resources.json
-cp schedules/ptu-runbook-schedules-example.json schedules/.ptu-runbook-schedules.json
-```
-- Add resource details as parameters for Schedule
-- Customize the StartTime & TimeZone, Frequency & Interval, Parameters for creation and deletion runbooks.
-
-### Create Automation resources
+#### Run creation script
 
 ```bash
 python create-automation.py

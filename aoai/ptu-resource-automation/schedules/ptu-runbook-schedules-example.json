@@ -1,9 +1,9 @@
 {
-  "UpdatePTUDeploymentSchedule": {
-    "StartTime": "2025-09-30T17:55:00Z",
-    "TimeZone": "America/New_York",
-    "Frequency": "Day",
-    "Interval": 1,
+  "DownscalePTUDeploymentSchedule3": {
+    "StartTime": "2025-09-30T07:40:00Z",
+    "TimeZone": "Asia/Shanghai",
+    "Frequency": "Minute",
+    "Interval": 15,
     "RunbookName": "UpdatePTUDeployment",
     "Parameters": {
       "SKUName": "",
@@ -13,7 +13,24 @@
       "ModelVersion": "",
       "DeploymentName": "",
       "ModelFormat": "",
-      "ManualPTUCapacity": 0
+      "CapacityVariableName": "PTUDownscaleCapacity"
+    }
+  },
+  "UpscalePTUDeploymentSchedule3": {
+    "StartTime": "2025-09-30T07:45:00Z",
+    "TimeZone": "Asia/Shanghai",
+    "Frequency": "Minute",
+    "Interval": 15,
+    "RunbookName": "UpdatePTUDeployment",
+    "Parameters": {
+      "SKUName": "",
+      "ResourceGroupName": "",
+      "AccountName": "",
+      "ModelName": "",
+      "ModelVersion": "",
+      "DeploymentName": "",
+      "ModelFormat": "",
+      "CapacityVariableName": "PTUUpscaleCapacity"
     }
   }
 }

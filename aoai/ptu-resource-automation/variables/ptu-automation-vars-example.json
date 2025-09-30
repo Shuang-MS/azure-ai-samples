@@ -3,6 +3,14 @@
     "Value": 0,
     "Encrypted": false
   },
+  "PTUUpscaleCapacity": {
+    "Value": 30,
+    "Encrypted": false
+  },
+  "PTUDownscaleCapacity": {
+    "Value": 15,
+    "Encrypted": false
+  },
   "PTUBaselineCapacity": {
     "Value": 15,
     "Encrypted": false

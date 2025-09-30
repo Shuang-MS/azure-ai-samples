@@ -6,9 +6,10 @@ param(
     [Parameter(Mandatory=$true)][string]$ModelVersion,
     [Parameter(Mandatory=$true)][string]$DeploymentName,
     [string]$ModelFormat = "OpenAI",
-    [int]$ManualPTUCapacity = 15
+    [string]$CapacityVariableName = "PTUCalculatedCapacity"
 )
 
+$VerbosePreference = 'SilentlyContinue'
 $script:RunbookName = "Runbook-UpdatePTUCapacity"
 $script:WebhookUrl = ""
 
@@ -32,7 +33,7 @@ function Send-Alert {
         $responseContent = $response | ConvertFrom-Json
 
         if ($responseContent.code -eq 0) {
-            Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') Alert sent successfully to Feishu webhook."
+            Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') Alert sent successfully to Feishu webhook." | Out-Null
         } else {
             Write-Warning "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') Alert failed: $($responseContent.msg)"
         }
@@ -103,17 +104,9 @@ function Get-AutomationIntVariable {
         [int]$DefaultValue = 0
     )
 
-    $rawValue = Get-AutomationVariable -Name $Name -ErrorAction SilentlyContinue
-    if ([string]::IsNullOrWhiteSpace($rawValue)) {
-        return $DefaultValue
-    }
-
-    if ([int]::TryParse($rawValue.ToString(), [ref]([int]$parsed = 0))) {
-        return $parsed
-    }
-
-    Write-Warning "Automation variable '$Name' has non-numeric value '$rawValue'. Using default '$DefaultValue'."
-    return $DefaultValue
+    $rawValue = Get-AutomationVariable -Name $Name -ErrorAction Stop
+    
+    return $rawValue
 }
 
 function Get-PTUDeployment {
@@ -165,7 +158,7 @@ class MgmtCognitiveServices {
     ## Todo: Use the real API to get available capacities
     [object] GetAvailableCapacities([string]$location, [string]$modelFormat, [string]$modelName, [string]$modelVersion, [string]$skuName) {
         # Placeholder implementation; replace with actual API call if available
-        Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') Fetching available capacities for model '$modelName' version '$modelVersion' in location '$location' with SKU '$skuName'."
+        Write-Information "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') Fetching available capacities for model '$modelName' version '$modelVersion' in location '$location' with SKU '$skuName'."
         return 300
     }
 
@@ -201,7 +194,6 @@ class MgmtCognitiveServices {
         $uriBuilder = [System.UriBuilder]::new($basePath)
         $uriBuilder.Query = "api-version=$($this.ApiVersion)"
         $uri = $uriBuilder.Uri.AbsoluteUri
-        Write-Verbose "Deployment Update URI: $uri"
 
         $body = @{
             sku = @{
@@ -238,33 +230,38 @@ class MgmtCognitiveServices {
     }
 }
 
+function Determine-PTUCapacity {
+    param([string]$CapacityVariableName)
+    
+    $targetCapacity = Get-AutomationIntVariable -Name $CapacityVariableName
+    $baselineCapacity = Get-AutomationIntVariable -Name 'PTUBaselineCapacity'
+
+    Write-Information "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC')  capacities - Target: $targetCapacity, Baseline: $baselineCapacity"
+
+    if ($targetCapacity -gt 0) {
+        return $targetCapacity
+    }
+
+    if ($baselineCapacity -gt 0) {
+        return $baselineCapacity
+    }
+
+    throw [InvalidOperationException]::new("No valid PTU capacity available from target or baseline variables.")
+}
+
 try {
+    $PTUCapacity = Determine-PTUCapacity -CapacityVariableName $CapacityVariableName
+    Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') Expected capacity: $PTUCapacity"
+
+    $script:WebhookUrl = Get-AutomationVariable -Name 'PTUWebhookUrl' -ErrorAction SilentlyContinue
+
     Invoke-WithRetry -Operation "Connect-AzAccount (Managed Identity)" -ScriptBlock {
         Connect-AzAccount -Identity -ErrorAction Stop | Out-Null
     }
-
     Invoke-WithRetry -Operation "az login (Managed Identity)" -ScriptBlock {
         & az login --identity --output none --only-show-errors | Out-Null
     }
-
     $SubscriptionId = (Get-AzContext -ErrorAction Stop).Subscription.Id
-
-    $PTUCapacity      = Get-AutomationIntVariable -Name 'PTUCalculatedCapacity'
-    $BaselineCapacity = Get-AutomationIntVariable -Name 'PTUBaselineCapacity'
-    if ($PTUCapacity -le 0) {
-        if ($ManualPTUCapacity -gt 0) {
-            $PTUCapacity = $ManualPTUCapacity
-            Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') Using manual PTU capacity: $ManualPTUCapacity"
-        } elseif ($BaselineCapacity -gt 0) {
-            $PTUCapacity = $BaselineCapacity
-            Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') No calculated PTU capacity found. Using baseline capacity: $BaselineCapacity"
-        }
-    }
-
-    $webhookVariable = Get-AutomationVariable -Name 'PTUWebhookUrl' -ErrorAction SilentlyContinue
-    if ($null -ne $webhookVariable) {
-        $script:WebhookUrl = $webhookVariable
-    }
 
     $account = Invoke-AzCli `
         "cognitiveservices" "account" "show" `
