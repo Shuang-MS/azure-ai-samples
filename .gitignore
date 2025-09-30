@@ -8,3 +8,5 @@ log/
 *.log
 
 .ptu-runbook-*.json
+.ptu-resources-*.json
+.ptu-automation-*.json
