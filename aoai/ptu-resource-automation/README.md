@@ -4,10 +4,10 @@ Automate scheduled creation and deletion of Azure OpenAI (AOAI) Provisioned Thro
 
 ## Components
 - `create-automation.py`: Idempotent bootstrap script (Automation Account, Runbooks, Variables, Schedules).
-- `runbooks/CreatePTUDeployment.ps1`: Runbook to create/update AOAI PTU deployment resources.
-- `runbooks/DeletePTUDeployment.ps1`: Runbook to tear down AOAI PTU deployment resources safely.
-- `variables/ptu-runbook-vars.json`: Key/value definitions consumed as Automation Variables.
+- `runbooks/UpdatePTUDeployment.ps1`: Runbook to tear down AOAI PTU deployment resources safely.
+- `variables/ptu-automation-vars.json`: Key/value definitions consumed as Automation Variables.
 - `schedules/ptu-runbook-schedules.json`: Schedule definitions (e.g., create at 18:00 PDT, delete at 22:00 PDT).
+- `schedules/ptu-runbook-resources.json`: Parameters for the Schedule to trigger the Runbook.
 - `.env`: Local development environment variable file (not committed).
 
 ## Prerequisites
@@ -59,7 +59,7 @@ export SUBSCRIPTION_ID=$(az account show --query id -o tsv)
 ### Set PTU Variables
 
 ```bash
-cp variables/ptu-runbook-vars-example-v2.json variables/.ptu-automation-vars.json
+cp variables/ptu-automation-vars-example.json variables/.ptu-automation-vars.json
 ```
 
 - Variables to customize
@@ -73,16 +73,16 @@ cp variables/ptu-runbook-vars-example-v2.json variables/.ptu-automation-vars.jso
 ### Set up Schedules
 
 ```bash
-cp schedules/ptu-resources-example.json schedules/.ptu-resources-def.json
+cp schedules/ptu-runbook-resources-example.json schedules/.ptu-runbook-resources.json
 cp schedules/ptu-runbook-schedules-example.json schedules/.ptu-runbook-schedules.json
 ```
-
+- Add resource details as parameters for Schedule
 - Customize the StartTime & TimeZone, Frequency & Interval, Parameters for creation and deletion runbooks.
 
 ### Create Automation resources
 
 ```bash
-python create-automation-v2.py
+python create-automation.py
 ```
 
 ## Next steps

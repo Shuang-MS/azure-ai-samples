@@ -18,16 +18,15 @@ AA = os.environ["AUTOMATION_ACCOUNT_NAME"]
 SUBSCRIPTION_ID = os.environ["SUBSCRIPTION_ID"]
 
 VARS_JSON_REL = os.environ["AUTOMATION_VARIABLES_JSON"]
-SCHEDULES_JSON_REL = os.environ.get("AUTOMATION_SCHEDULES_JSON") 
-CREATE_RUNBOOK_PATH_REL = os.environ["CREATE_RUNBOOK_PATH"]
-DELETE_RUNBOOK_PATH_REL = os.environ["DELETE_RUNBOOK_PATH"]
-CREATE_RUNBOOK_NAME = os.environ["CREATE_RUNBOOK_NAME"]
-DELETE_RUNBOOK_NAME = os.environ["DELETE_RUNBOOK_NAME"]
+SCHEDULES_JSON_REL = os.environ.get("AUTOMATION_SCHEDULES_JSON")
+RESOURCE_DEF_JSON_REL = os.environ.get("PTU_RESOURCES_JSON")
+UPDATE_RUNBOOK_PATH_REL = os.environ["UPDATE_RUNBOOK_PATH"]
+UPDATE_RUNBOOK_NAME = os.environ["UPDATE_RUNBOOK_NAME"]
 
 vars_path = os.path.abspath(VARS_JSON_REL)
 schedules_path = SCHEDULES_JSON_REL
-create_runbook_path = CREATE_RUNBOOK_PATH_REL
-delete_runbook_path = DELETE_RUNBOOK_PATH_REL
+resource_def_path = RESOURCE_DEF_JSON_REL
+update_runbook_path = UPDATE_RUNBOOK_PATH_REL
 
 with open(vars_path, "r", encoding="utf-8") as f:
     vars_data = json.load(f)
@@ -39,13 +38,13 @@ if schedules_path and os.path.exists(schedules_path):
 else:
     print(f"Schedules file not found or not specified: {schedules_path}")
 
-ptu_rg = vars_data["PTUResourceGroupName"]["value"]
-ptu_account_name = vars_data["PTUFoundryAccountName"]["value"]
-assert ptu_rg, "PTUResourceGroupName variable is required."
-assert ptu_account_name, "PTUFoundryAccountName variable is required."
+with open(resource_def_path, "r", encoding="utf-8") as f:
+    resource_def_data = json.load(f)
+    ptu_rg = resource_def_data["ResourceGroupName"]
+    ptu_account_name = resource_def_data["AccountName"]                                      
 
-ptu_account_resource_id = f"/subscriptions/{SUBSCRIPTION_ID}/resourceGroups/{ptu_rg}/providers/Microsoft.CognitiveServices/accounts/{ptu_account_name}"
-ptu_account_required_role = "Cognitive Services OpenAI Contributor"
+ptu_subscription_resource_id = f"/subscriptions/{SUBSCRIPTION_ID}"
+ptu_account_required_role = "Cognitive Services Contributor"
 
 credential = AzureCliCredential()
 automation_client = AutomationClient(credential, SUBSCRIPTION_ID)
@@ -113,16 +112,17 @@ def ensure_automation_account():
         if not principal_id:
             raise RuntimeError(f"Managed identity was not assigned properly to {acct.id}.")
 
-        ensure_role_assignment(principal_id, ptu_account_resource_id, ptu_account_required_role)
+        ensure_role_assignment(principal_id, ptu_subscription_resource_id, ptu_account_required_role)
         
     return acct
 
 def create_variables():
     print("Creating Automation Variables...")
+    print(f"Variables: {vars_data.keys()}")
     for name, v in vars_data.items():
-        value = json.dumps(v["value"])
+        value = json.dumps(v["Value"])
         print(f"Value for {name}: {value}")
-        encrypted = bool(v.get("encrypted", False))
+        encrypted = bool(v.get("Encrypted", False))
         print(f"  Variable: {name}")
 
         automation_client.variable.create_or_update(
@@ -178,13 +178,14 @@ def import_and_publish_runbook(runbook_name: str, file_path: str):
     poller = automation_client.runbook.begin_publish(RG, AA, runbook_name)
     poller.result()
 
-def ensure_schedule_and_link(name, schedule_def: dict):
+def ensure_schedule_and_link(name, schedule_def: dict, params: dict):
     runbook_name = schedule_def["RunbookName"]
     start_time = schedule_def["StartTime"]
     frequency = schedule_def["Frequency"]
     interval = schedule_def["Interval"]
     time_zone = schedule_def.get("TimeZone", "UTC")
     parameters = schedule_def.get("Parameters", {})
+    parameters.update(params or {})
 
     print(f"Ensuring schedule '{name}' for runbook '{runbook_name}'")
     try:
@@ -229,10 +230,9 @@ def main():
     try:
         run_step("Ensure Automation Account", ensure_automation_account)
         run_step("Create Variables", create_variables)
-        run_step(f"Import & Publish Runbook {CREATE_RUNBOOK_NAME}", import_and_publish_runbook, CREATE_RUNBOOK_NAME, create_runbook_path)
-        run_step(f"Import & Publish Runbook {DELETE_RUNBOOK_NAME}", import_and_publish_runbook, DELETE_RUNBOOK_NAME, delete_runbook_path)
+        run_step(f"Import & Publish Runbook {UPDATE_RUNBOOK_NAME}", import_and_publish_runbook, UPDATE_RUNBOOK_NAME, update_runbook_path)
         for name, s in schedules_data.items():
-            run_step(f"Ensure Schedule {name}", ensure_schedule_and_link, name, s)
+            run_step(f"Ensure Schedule {name}", ensure_schedule_and_link, name, s, resource_def_data)
         print("Done.")
     except Exception as e:
         print("Aborting due to previous failure. ", {e})

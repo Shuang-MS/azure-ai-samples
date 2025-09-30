@@ -1,37 +1,19 @@
 {
-  "CreatePTUDeploymentSchedule": {
-    "StartTime": "2025-09-13T17:55:00Z",
-    "TimeZone": "America/New_York",
-    "Frequency": "Day",
-    "Interval": 1,
-    "RunbookName": "CreatePTUDeployment",
-    "Parameters": {
-      "SKUName": "GlobalStandard",
-      "PTUCapacity": 1
-    }
-  },
-  "DeletePTUDeploymentSchedule": {
-    "StartTime": "2025-09-13T21:50:00Z",
-    "TimeZone": "America/New_York",
-    "Frequency": "Day",
-    "Interval": 1,
-    "RunbookName": "DeletePTUDeployment"
-  },
   "UpdatePTUDeploymentSchedule": {
-    "StartTime": "2025-09-13T17:55:00Z",
+    "StartTime": "2025-09-30T17:55:00Z",
     "TimeZone": "America/New_York",
     "Frequency": "Day",
     "Interval": 1,
     "RunbookName": "UpdatePTUDeployment",
     "Parameters": {
-      "SKUName": "DataZoneProvisionedManaged",
-      "ResourceGroupName": "<resource-group-name>",
-      "AccountName": "<ai-foundry-account-name>",
-      "ModelName": "gpt-5",
-      "ModelVersion": "2025-08-07",
-      "DeploymentName": "gpt-5-ptu",
-      "ModelFormat": "OpenAI",
-      "ManualPTUCapacity": 1
+      "SKUName": "",
+      "ResourceGroupName": "",
+      "AccountName": "",
+      "ModelName": "",
+      "ModelVersion": "",
+      "DeploymentName": "",
+      "ModelFormat": "",
+      "ManualPTUCapacity": 0
     }
   }
 }

@@ -6,5 +6,5 @@
     "ModelVersion": "2025-08-07",
     "DeploymentName": "gpt-5-ptu",
     "ModelFormat": "OpenAI",
-    "ManualPTUCapacity": 1
+    "ManualPTUCapacity": 15
 }
