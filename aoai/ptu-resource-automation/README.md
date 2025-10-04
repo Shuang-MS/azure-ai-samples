@@ -70,7 +70,7 @@ cp schedules/ptu-runbook-resources-example.json schedules/.ptu-runbook-resources
 cp schedules/ptu-runbook-schedules-example.json schedules/.ptu-runbook-schedules.json
 ```
 - Add resource details as parameters for Schedule
-- Customize the StartTime (in UTC) & TimeZone (for display only), Frequency & Interval, Parameters for running runbooks.
+- Customize the StartTime (format "YYYY-MM-DDTHH:mm:ss" in the Timezone) & TimeZone, Frequency & Interval, IsEnabled, and Parameters (for the linked runbook) for running runbooks.
 
 ### Create Automation resources
 
