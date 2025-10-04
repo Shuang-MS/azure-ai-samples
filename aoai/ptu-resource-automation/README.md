@@ -53,7 +53,7 @@ cp .env.example .env
 cp variables/ptu-automation-vars-example.json variables/.ptu-automation-vars.json
 ```
 
-- Variables to customize
+#### Variables to customize
 
 | Variable | Description | Required |
 |----------|-------------| ---------|
@@ -69,8 +69,34 @@ cp variables/ptu-automation-vars-example.json variables/.ptu-automation-vars.jso
 cp schedules/ptu-runbook-resources-example.json schedules/.ptu-runbook-resources.json
 cp schedules/ptu-runbook-schedules-example.json schedules/.ptu-runbook-schedules.json
 ```
-- Add resource details as parameters for Schedule
-- Customize the StartTime (format "YYYY-MM-DDTHH:mm:ss" in the Timezone) & TimeZone, Frequency & Interval, IsEnabled, and Parameters (for the linked runbook) for running runbooks.
+
+#### Add resource details as parameters for Schedule
+
+   | Variable | Description | Required |
+   |----------|-------------| ---------|
+   | `SKUName` | DataZoneProvisionedManaged, GlobalProvisionedManaged, ProvisionedManaged  | Default: "DataZoneProvisionedManaged" |
+   | `ResourceGroupName` | Resource group of the AI Foundry Resource | ✅ |
+   | `AccountName` | Account Name of the AI Foundry Resource | ✅ |
+   | `ModelName` | Model name, e.g. "gpt-5" | ✅ |
+   | `ModelVersion` | Latest version of the model, e.g. "2025-08-07" | ✅ |
+   | `DeploymentName` | Deployment name of the model, e.g. "gpt-5-ptu" | ✅ |
+   | `ModelFormat` | Model provider | Default: "OpenAI" |
+
+#### Customize the schedule configurations
+
+   | Variable | Description | Required |
+   |----------|-------------| ---------|
+   | Key Name | The name of the Schedule, e.g. "DownscalePTUDeploymentSchedule", "DownscalePTUDeploymentSchedule"  | ✅ |
+   | `Description` | Optional, description of the schedule | No |
+   | `StartTime` | When the Schedule starts | ✅ |
+   | `EndTime` | When the Schedule expires, remove if unnecessary | No |
+   | `TimeZone` | Timezone of the StartTime and EndTime, remove if UTC | No |
+   | `Frequency` | OneTime, Day, Hour, Week, Month, Minute | ✅ |
+   | `Interval` | Interval of the Frequency, remove if Freqeuncy is "OneTime" | ✅ for Non-OneTime Frequency |
+   | `RunbookName` | The Runbook linked with the Schedule | ✅ |
+   | `IsEnabled` | Enable the Schedule after creation, set to "false" if manual enablement | No |
+   | `Parameters` | Updated by the [ptu-runbook-resources.json](#add-resource-details-as-parameters-for-schedule), leave empty parameters as "" | No |
+   | `Parameters.CapacityVariableName` | The Variable to determine the capacity, see [pre-configured Variables](#variables-to-customize)  | ✅ |
 
 ### Create Automation resources
 

@@ -12,7 +12,7 @@ from azure.mgmt.authorization import AuthorizationManagementClient
 from azure.mgmt.resource import ResourceManagementClient
 from azure.core.exceptions import ResourceNotFoundError
 
-load_dotenv()  # Load environment variables from .env file if present
+load_dotenv()
 
 RG = os.environ["AUTOMATION_RESOURCE_GROUP_NAME"]
 LOC = os.environ["LOCATION"]
@@ -119,23 +119,26 @@ def ensure_automation_account():
     return acct
 
 def create_variables():
-    print("  [NEW] Creating or updating Automation Variables...")
-
     for name, v in vars_data.items():
         value = json.dumps(v["Value"])
         encrypted = bool(v.get("Encrypted", False))
 
-        automation_client.variable.create_or_update(
-            RG,
-            AA,
-            name,
-            {
-                "name": name,
-                "value": value,
-                "is_encrypted": encrypted,
-                "description": "",
-            },
-        )
+        try:
+            varialble = automation_client.variable.get(RG, AA, name)
+            print(f"  [FOUND] Variable '{name}' already exists. Skipping...")
+        except ResourceNotFoundError:
+            print("  [NEW] Creating or updating Automation Variables...")
+            automation_client.variable.create_or_update(
+                RG,
+                AA,
+                name,
+                {
+                    "name": name,
+                    "value": value,
+                    "is_encrypted": encrypted,
+                    "description": "",
+                },
+            )
 
 def run_step(step_name: str, fn, *args, **kwargs):
     print(f"==> {step_name}")

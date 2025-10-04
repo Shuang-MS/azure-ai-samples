@@ -1,10 +1,30 @@
 {
-  "DownscalePTUDeploymentSchedule3": {
-    "StartTime": "2025-09-30T07:40:00Z",
+  "UpdatePTUDeploymentSchedule": {
+    "Description": "Schedule to update PTU deployment capacity based on calculated capacity every 2 hours",
+    "StartTime": "2030-10-01T00:00:00",
     "TimeZone": "Asia/Shanghai",
-    "Frequency": "Minute",
-    "Interval": 15,
+    "Frequency": "OneTime",
     "RunbookName": "UpdatePTUDeployment",
+    "IsEnabled": true,
+    "Parameters": {
+      "SKUName": "",
+      "ResourceGroupName": "",
+      "AccountName": "",
+      "ModelName": "",
+      "ModelVersion": "",
+      "DeploymentName": "",
+      "ModelFormat": "",
+      "CapacityVariableName": "PTUCalculatedCapacity"
+    }
+  },
+  "DownscalePTUDeploymentSchedule": {
+    "Description": "Schedule to downscale PTU deployment capacity at the end of peak hours",
+    "StartTime": "2030-10-01T22:50:00",
+    "TimeZone": "Asia/Shanghai",
+    "Frequency": "Day",
+    "Interval": 1,
+    "RunbookName": "UpdatePTUDeployment",
+    "IsEnabled": false,
     "Parameters": {
       "SKUName": "",
       "ResourceGroupName": "",
@@ -16,12 +36,14 @@
       "CapacityVariableName": "PTUDownscaleCapacity"
     }
   },
-  "UpscalePTUDeploymentSchedule3": {
-    "StartTime": "2025-09-30T07:45:00Z",
+  "UpscalePTUDeploymentSchedule": {
+    "Description": "Schedule to downscale PTU deployment capacity at the beginning of peak hours",
+    "StartTime": "2030-10-01T17:50:00",
     "TimeZone": "Asia/Shanghai",
-    "Frequency": "Minute",
-    "Interval": 15,
+    "Frequency": "Day",
+    "Interval": 1,
     "RunbookName": "UpdatePTUDeployment",
+    "IsEnabled": false,
     "Parameters": {
       "SKUName": "",
       "ResourceGroupName": "",

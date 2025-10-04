@@ -1,15 +1,18 @@
 param(
-    [string]$SKUName = "DataZoneProvisionedManaged",
     [Parameter(Mandatory=$true)][string]$ResourceGroupName,
     [Parameter(Mandatory=$true)][string]$AccountName,
-    [Parameter(Mandatory=$true)][string]$ModelName,
-    [Parameter(Mandatory=$true)][string]$ModelVersion,
-    [Parameter(Mandatory=$true)][string]$DeploymentName,
+    [string]$ModelName = "gpt-5",
+    [string]$ModelVersion = "2025-08-07",
+    [string]$DeploymentName = "gpt-5-ptu",
+    [string]$SKUName = "DataZoneProvisionedManaged",
     [string]$ModelFormat = "OpenAI",
     [string]$CapacityVariableName = "PTUCalculatedCapacity"
 )
 
 $VerbosePreference = 'SilentlyContinue'
+$ProgressPreference  = 'SilentlyContinue'
+$InformationPreference = 'Continue'
+
 $script:RunbookName = "Runbook-UpdatePTUCapacity"
 $script:WebhookUrl = ""
 
@@ -33,7 +36,7 @@ function Send-Alert {
         $responseContent = $response | ConvertFrom-Json
 
         if ($responseContent.code -eq 0) {
-            Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') Alert sent successfully to Feishu webhook." | Out-Null
+            Write-Information "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') Alert sent successfully to Feishu webhook."
         } else {
             Write-Warning "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') Alert failed: $($responseContent.msg)"
         }
@@ -50,6 +53,8 @@ function Invoke-WithRetry {
         [string]$Operation = "operation"
     )
 
+    $nonretryErrors = @("Authentication", "Authorization", "ResourceNotFound", "NotFound", "BadRequest", "QuotaExceeded")
+
     $attempt = 0
     $delay   = [double]$InitialDelaySeconds
 
@@ -62,6 +67,10 @@ function Invoke-WithRetry {
 
             return & $ScriptBlock
         } catch {
+            if ($_.Exception.Message -match ($nonretryErrors -join "|")) {
+                throw
+            }
+
             if ($attempt -ge $RetryCount) {
                 throw
             }
@@ -96,17 +105,6 @@ function Invoke-AzCli {
     }
 
     return $result
-}
-
-function Get-AutomationIntVariable {
-    param(
-        [Parameter(Mandatory)][string]$Name,
-        [int]$DefaultValue = 0
-    )
-
-    $rawValue = Get-AutomationVariable -Name $Name -ErrorAction Stop
-    
-    return $rawValue
 }
 
 function Get-PTUDeployment {
@@ -155,13 +153,8 @@ class MgmtCognitiveServices {
         }
     }
 
-    ## Todo: Use the real API to get available capacities
-    [object] GetAvailableCapacities([string]$location, [string]$modelFormat, [string]$modelName, [string]$modelVersion, [string]$skuName) {
-        # Placeholder implementation; replace with actual API call if available
-        Write-Information "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') Fetching available capacities for model '$modelName' version '$modelVersion' in location '$location' with SKU '$skuName'."
-        return 300
-    }
-
+    # Requires Cognitive Services Contributor role on the Subscription assigned to the Automation Account Managed Identity
+    # https://learn.microsoft.com/en-us/rest/api/aiservices/accountmanagement/location-based-model-capacities/list?view=rest-aiservices-accountmanagement-2024-10-01&tabs=HTTP#code-try-0
     [object] GetModelCapacities([string]$location, [string]$modelFormat, [string]$modelName, [string]$modelVersion, [string]$skuName) {
         $uri = "$($this.BaseUrl)/providers/$($this.Provider)/locations/$location/modelCapacities?api-version=$($this.ApiVersion)&modelFormat=$modelFormat&modelName=$modelName&modelVersion=$modelVersion"
 
@@ -171,7 +164,8 @@ class MgmtCognitiveServices {
             }
 
             if ($null -eq $response -or $null -eq $response.value) {
-                throw [InvalidOperationException]::new("Model capacities response is empty.")
+                Write-Warning "Model capacities response is empty. Skipped. "
+                # throw [InvalidOperationException]::new("Model capacities response is empty.")
             }
 
             foreach ($item in $response.value) {
@@ -182,11 +176,13 @@ class MgmtCognitiveServices {
 
             $msg = "SKU '$skuName' not found in model capacities."
             Write-Warning $msg
-            throw [InvalidOperationException]::new($msg)
+            # throw [InvalidOperationException]::new($msg)
         } catch {
             Write-Error "Error calling Model Capacities List API: $($_.Exception.Message)"
-            throw
+            # throw
         }
+
+        return -1
     }
 
     [object] UpdateModelCapacity([string]$resourceGroupName, [string]$accountName, [string]$deploymentName, [string]$skuName, [int]$ptuCapacity) {
@@ -233,27 +229,56 @@ class MgmtCognitiveServices {
 function Determine-PTUCapacity {
     param([string]$CapacityVariableName)
     
-    $targetCapacity = Get-AutomationIntVariable -Name $CapacityVariableName
-    $baselineCapacity = Get-AutomationIntVariable -Name 'PTUBaselineCapacity'
+    $targetCapacity = Get-AutomationVariable -Name $CapacityVariableName
 
-    Write-Information "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC')  capacities - Target: $targetCapacity, Baseline: $baselineCapacity"
+    Write-Information "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC')  capacities - Target: $targetCapacity"
 
     if ($targetCapacity -gt 0) {
         return $targetCapacity
     }
 
-    if ($baselineCapacity -gt 0) {
-        return $baselineCapacity
+    throw [InvalidOperationException]::new("No valid PTU capacity available from '$CapacityVariableName'.")
+}
+
+function Confirm-PTUCapacityAvailable {
+    param(
+        [MgmtCognitiveServices]$MgmtClient,
+        [string]$Location,
+        [string]$ModelFormat,
+        [string]$ModelName,
+        [string]$ModelVersion,
+        [string]$SKUName,
+        [int]$CurrentCapacity,
+        [int]$RequestedCapacity,
+        [string]$DeploymentName
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Location)) {
+        Write-Verbose "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') No location provided; skipping capacity validation."
+        return
     }
 
-    throw [InvalidOperationException]::new("No valid PTU capacity available from target or baseline variables.")
+    $availableCapacities = $MgmtClient.GetModelCapacities($Location, $ModelFormat, $ModelName, $ModelVersion, $SKUName)
+    if ($availableCapacities -le 0) {
+        $msg = "Failed to retrieve available capacities for model '$ModelName' version '$ModelVersion' in location '$Location'. Skipping capacity check."
+        Write-Warning $msg
+        return
+    }
+
+    if ($availableCapacities -lt $RequestedCapacity) {
+        $msg = "Insufficient PTU capacity: Requested '$RequestedCapacity' exceeds available '$availableCapacities' for model '$ModelName' version '$ModelVersion' in location '$Location'."
+        Write-Error $msg
+        Send-Alert -Message $msg
+        throw [InvalidOperationException]::new($msg)
+    }
+
+    Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') Sufficient capacity $availableCapacities for model '$ModelName' version '$ModelVersion' in location '$Location'. Updating deployment '$DeploymentName' capacity from $CurrentCapacity to $RequestedCapacity."
 }
 
 try {
+    $script:WebhookUrl = Get-AutomationVariable -Name 'PTUWebhookUrl' -ErrorAction SilentlyContinue
     $PTUCapacity = Determine-PTUCapacity -CapacityVariableName $CapacityVariableName
     Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') Expected capacity: $PTUCapacity"
-
-    $script:WebhookUrl = Get-AutomationVariable -Name 'PTUWebhookUrl' -ErrorAction SilentlyContinue
 
     Invoke-WithRetry -Operation "Connect-AzAccount (Managed Identity)" -ScriptBlock {
         Connect-AzAccount -Identity -ErrorAction Stop | Out-Null
@@ -271,17 +296,12 @@ try {
         "--only-show-errors" `
         -AsJson
 
-    $location = $account.location
-    if ([string]::IsNullOrWhiteSpace($location)) {
-        throw [InvalidOperationException]::new("Account '$AccountName' returned an empty location.")
-    }
-
     $deployment = Get-PTUDeployment -AccountName $AccountName -ResourceGroupName $ResourceGroupName -DeploymentName $DeploymentName
     Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') Deployment $DeploymentName exists. Validating capacity..."
 
-    $skuName = $deployment.sku.name
-    if ($skuName -ne $SKUName) {
-        $msg = "Deployment '$DeploymentName' SKU Name '$skuName' does not match expected '$SKUName'."
+    $deploymentSKUName = $deployment.sku.name
+    if ($deploymentSKUName -ne $SKUName) {
+        $msg = "Deployment '$DeploymentName' SKU Name '$deploymentSKUName' does not match expected '$SKUName'."
         throw [InvalidOperationException]::new($msg)
     }
 
@@ -291,22 +311,23 @@ try {
         return
     }
 
-    $mgmtClient = [MgmtCognitiveServices]::new($SubscriptionId)
-    $availableCapacities = $mgmtClient.GetModelCapacities($location, $ModelFormat, $ModelName, $ModelVersion, $SKUName)
-    Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') Available capacity: $availableCapacities"
+        $mgmtClient = [MgmtCognitiveServices]::new($SubscriptionId)
 
-    if ($availableCapacities -lt $PTUCapacity) {
-        $msg = "Insufficient PTU capacity: Requested '$PTUCapacity' exceeds available '$availableCapacities' for model '$ModelName' version '$ModelVersion' in location '$location'."
-        Write-Error $msg
-        Send-Alert -Message $msg
-        throw [InvalidOperationException]::new($msg)
+    $location = $account.location
+    if ($location) {
+        Confirm-PTUCapacityAvailable `
+            -MgmtClient $mgmtClient `
+            -Location $location `
+            -ModelFormat $ModelFormat `
+            -ModelName $ModelName `
+            -ModelVersion $ModelVersion `
+            -SKUName $SKUName `
+            -CurrentCapacity $currentCapacity `
+            -RequestedCapacity $PTUCapacity `
+            -DeploymentName $DeploymentName
     }
-
-    Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') Sufficient capacity $availableCapacities for model '$ModelName' version '$ModelVersion' in location '$location'. Proceeding with deployment update..."
-
-    Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') Updating deployment '$DeploymentName' capacity from $currentCapacity to $PTUCapacity."
+    
     $updatedCapacity = $mgmtClient.UpdateModelCapacity($ResourceGroupName, $AccountName, $DeploymentName, $SKUName, $PTUCapacity)
-
     Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') Deployment '$DeploymentName' capacity updated successfully to '$updatedCapacity'."
 } catch {
     $failureMessage = "Runbook failed: $($_.Exception.Message)"
