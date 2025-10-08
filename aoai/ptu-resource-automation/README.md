@@ -5,6 +5,7 @@ Automate scheduled creation and deletion of Azure OpenAI (AOAI) Provisioned Thro
 ## Components
 - `create-automation.py`: Idempotent bootstrap script (Automation Account, Runbooks, Variables, Schedules).
 - `runbooks/UpdatePTUDeployment.ps1`: Runbook to tear down AOAI PTU deployment resources safely.
+- `runbooks/CalculatePTUCapacity.ps1`: Runbook for calculate PTU capacity as per usage within certain period. Support for apps using ChatCompletions API only.
 - `variables/ptu-automation-vars.json`: Key/value definitions consumed as Automation Variables.
 - `schedules/ptu-runbook-schedules.json`: Schedule definitions (e.g., create at 18:00 PDT, delete at 22:00 PDT).
 - `schedules/ptu-runbook-resources.json`: Parameters for the Schedule to trigger the Runbook.
@@ -119,4 +120,10 @@ python create-automation.py
 
 ## Next steps
 
-- Dynamically calculate the SKU Capacity base on last 7-day tokens 
+### 1. Use create-automation.py to create role assignments, runbook and schedule for CalculatePTUCapacity tasks.
+
+- Roles required: 
+   - Monitoring Reader on Azure AI Foundry resource
+   - Automation Contributor on Automation Account
+
+### 2. Improve the logic for apps using Response API, e.g. using Log Analytics
