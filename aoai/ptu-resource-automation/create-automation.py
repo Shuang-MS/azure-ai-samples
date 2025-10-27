@@ -25,6 +25,8 @@ RESOURCE_DEF_JSON_REL = os.environ.get("PTU_RESOURCES_JSON")
 UPDATE_RUNBOOK_PATH_REL = os.environ["UPDATE_RUNBOOK_PATH"]
 UPDATE_RUNBOOK_NAME = os.environ["UPDATE_RUNBOOK_NAME"]
 
+WEBHOOK_ALERT_MODULE_URL = os.environ.get("WEBHOOK_ALERT_MODULE")
+
 vars_path = os.path.abspath(VARS_JSON_REL)
 schedules_path = os.path.abspath(SCHEDULES_JSON_REL)
 resource_def_path = os.path.abspath(RESOURCE_DEF_JSON_REL)
@@ -156,6 +158,28 @@ def read_file_utf8(path: str) -> str:
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
 
+def create_and_update_module(module_name: str, file_path: str):
+    print(f"  [?] Creating or updating module '{module_name}' from {file_path}")
+
+    if not file_path or not file_path.lower().endswith('.zip'):
+        print(f"  [ERROR] {file_path} is not a valid link to a zip file.")
+        return
+
+    params = {
+        "content_link": {
+            "uri": file_path,
+        },
+        "name": module_name,
+        "location": LOC,
+    }
+
+    try:
+        automation_client.module.create_or_update(RG, AA, module_name, params)
+        print(f"  [OK] Module '{module_name}' created or updated.")
+    except Exception as e:
+        print(f"  [ERROR] Failed to create or update module '{module_name}': {e}")
+        raise
+
 def import_and_publish_runbook(runbook_name: str, file_path: str):
     print(f"  [?] Importing runbook '{runbook_name}' from {file_path}")
     content = read_file_utf8(file_path)
@@ -268,6 +292,7 @@ def main():
     try:
         run_step("Ensure Automation Account", ensure_automation_account)
         run_step("Create Variables", create_variables)
+        run_step("Create or Update Webhook Alert Module", create_and_update_module, "Webhook-Alert", WEBHOOK_ALERT_MODULE_URL)
         run_step(f"Import & Publish Runbook {UPDATE_RUNBOOK_NAME}", import_and_publish_runbook, UPDATE_RUNBOOK_NAME, update_runbook_path)
         for name, s in schedules_data.items():
             run_step(f"Ensure Schedule {name}", ensure_schedule, name, s)
