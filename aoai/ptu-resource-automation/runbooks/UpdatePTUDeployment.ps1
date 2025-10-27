@@ -16,33 +16,18 @@ $InformationPreference = 'Continue'
 $script:RunbookName = "Runbook-UpdatePTUCapacity"
 $script:WebhookUrl = ""
 
+Import-Module -Name Webhook-Alert
+
 function Send-Alert {
     param([string]$Message)
 
     if ([string]::IsNullOrEmpty($script:WebhookUrl)) {
-        Write-Warning "Missing Feishu webhook URL or secret; alert skipped."
+        Write-Warning "Missing webhook URL or secret; alert skipped."
         return
     }
 
-    try {
-        $alertContent = "Alert: $Message`nTime: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC')"
-        $body = @{
-            msg_type = "text"
-            content  = @{ text = "[$($script:RunbookName)] $alertContent" }
-        } | ConvertTo-Json -Depth 3
-
-        $headers = @{ "Content-Type" = "application/json" }
-        $response = Invoke-WebRequest -Method Post -Uri $script:WebhookUrl -Body $body -Headers $headers -UseBasicParsing
-        $responseContent = $response | ConvertFrom-Json
-
-        if ($responseContent.code -eq 0) {
-            Write-Information "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') Alert sent successfully to Feishu webhook."
-        } else {
-            Write-Warning "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') Alert failed: $($responseContent.msg)"
-        }
-    } catch {
-        Write-Error "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') Failed to send alert to Feishu: $($_.Exception.Message)"
-    }
+    $alertContent = "[$($script:RunbookName)]`nAlert: $Message`nTime: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC')"
+    Send-AlertByProvider -WebhookUrl $script:WebhookUrl -Message $alertContent
 }
 
 function Invoke-WithRetry {
